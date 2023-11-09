@@ -956,12 +956,38 @@ class ActiveRecord::Base
       end
     end
 
+    def remove_all_associations(inventories)
+      ActiveRecord::Base.transaction do
+        inventories.each do |inventory|
+          inventory.class.reflect_on_all_associations.each do |association|
+            associated_records = inventory.public_send(association.name)
+
+            case association.macro
+            when :has_many, :has_and_belongs_to_many
+              if association.options[:through]
+                associated_records.clear
+              else
+                associated_records.delete_all
+              end
+            when :has_one, :belongs_to
+              associated_object = associated_records
+              associated_object&.delete
+            end
+          end
+        end
+      end
+    rescue => e
+      Rails.logger.error "Failed to remove associations: #{e.message}"
+      raise e
+    end
+
     def import_associations(models, options)
       # now, for all the dirty associations, collect them into a new set of models, then recurse.
       # notes:
       #    does not handle associations that reference themselves
       #    should probably take a hash to associations to follow.
       return if models.nil?
+      remove_all_associations(models)
       associated_objects_by_class = {}
       models.each { |model| find_associated_objects_for_import(associated_objects_by_class, model) }
 
